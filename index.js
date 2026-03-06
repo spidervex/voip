@@ -6,7 +6,9 @@ const { exec } = require('child_process');
 const path = require('path');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const AUDIO_DIR = path.join(__dirname, 'audio');
+
+// CHANGED: Pointing directly to the new data drive/folder
+const AUDIO_DIR = '/data/audio';
 
 const conversationHistory = [
     { role: 'system', content: 'You are a helpful, concise AI voice assistant over a phone line. Keep your answers brief and spoken-word friendly.' }
@@ -37,8 +39,7 @@ ari.connect('http://127.0.0.1:8088', 'ai_user', 'ai_secret_pass', (err, client) 
         const liveRecording = client.LiveRecording();
 
         try {
-            // We initiate the record, but we don't need to specify a path here
-            // because we will pull the real path from the object Asterisk creates.
+            // Let Asterisk handle the inbound recording location and UUID generation
             await channel.record({
                 format: 'wav',
                 maxSilenceSeconds: 2,
@@ -53,7 +54,7 @@ ari.connect('http://127.0.0.1:8088', 'ai_user', 'ai_secret_pass', (err, client) 
         liveRecording.on('RecordingFinished', async (event) => {
             console.log(`🛑 Recording state: ${event.recording.state}.`);
 
-            // Asterisk tells us the name it chose in event.recording.name
+            // Asterisk tells us the UUID it chose
             const realName = event.recording.name;
             const recordPathWav = `/var/spool/asterisk/recording/${realName}.wav`;
 
@@ -88,7 +89,7 @@ ari.connect('http://127.0.0.1:8088', 'ai_user', 'ai_secret_pass', (err, client) 
                 console.log(`🤖 AI says: ${aiResponseText}`);
                 conversationHistory.push({ role: 'assistant', content: aiResponseText });
 
-                // --- 3. TTS: Generate Audio ---
+                // --- 3. TTS: Generate Audio in /data/audio ---
                 const mp3Response = await openai.audio.speech.create({
                     model: 'tts-1',
                     voice: 'alloy',
@@ -102,15 +103,20 @@ ari.connect('http://127.0.0.1:8088', 'ai_user', 'ai_secret_pass', (err, client) 
                 await fs.promises.writeFile(mp3Path, buffer);
                 await convertAudio(mp3Path, wavPath);
 
-                // --- 4. Playback ---
+                // --- 4. Playback from /data/audio ---
                 const playback = client.Playback();
                 const asteriskPlayPath = wavPath.replace('.wav', '');
 
                 await channel.play({ media: `sound:${asteriskPlayPath}` }, playback);
 
                 playback.on('PlaybackFinished', () => {
-                    // Clean up the recording file to keep your VPS SSD clean
+                    // Clean up the temporary inbound recording file
                     if (fs.existsSync(recordPathWav)) fs.unlinkSync(recordPathWav);
+
+                    // Optional: Clean up the generated AI audio to save space
+                    // if (fs.existsSync(mp3Path)) fs.unlinkSync(mp3Path);
+                    // if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath);
+
                     promptUser(channel);
                 });
 
