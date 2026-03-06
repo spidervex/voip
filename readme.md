@@ -61,7 +61,7 @@ sudo mv /etc/asterisk/extensions.conf /etc/asterisk/extensions.conf.bak
 Copy the custom configurations from this repository into the Asterisk directory:
 
 ```bash
-sudo cp asterisk-configs/* /etc/asterisk/
+sudo cp asterisk/* /etc/asterisk/
 ```
 
 Restart Asterisk to apply the changes:

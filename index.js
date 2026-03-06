@@ -33,34 +33,52 @@ ari.connect('http://127.0.0.1:8088', 'ai_user', 'ai_secret_pass', (err, client) 
 
     async function promptUser(channel) {
         console.log('🎙️ Recording user...');
-        const recordFile = `ai_input_${channel.id}`;
-        const recordPathWav = path.join(AUDIO_DIR, `${recordFile}.wav`);
 
         const liveRecording = client.LiveRecording();
-        await channel.record({
-            name: recordFile,
-            format: 'wav',
-            maxSilenceSeconds: 2,
-            beep: true
-        }, liveRecording);
 
-        liveRecording.on('RecordingFinished', async () => {
-            console.log('🛑 Recording finished. Processing...');
+        try {
+            // We initiate the record, but we don't need to specify a path here
+            // because we will pull the real path from the object Asterisk creates.
+            await channel.record({
+                format: 'wav',
+                maxSilenceSeconds: 2,
+                beep: true,
+                ifExists: 'overwrite'
+            }, liveRecording);
+        } catch (err) {
+            console.error("Failed to start recording:", err);
+            return;
+        }
+
+        liveRecording.on('RecordingFinished', async (event) => {
+            console.log(`🛑 Recording state: ${event.recording.state}.`);
+
+            // Asterisk tells us the name it chose in event.recording.name
+            const realName = event.recording.name;
+            const recordPathWav = `/var/spool/asterisk/recording/${realName}.wav`;
+
+            await new Promise(resolve => setTimeout(resolve, 300));
 
             try {
-                // 1. STT: Whisper
+                if (!fs.existsSync(recordPathWav)) {
+                    console.error(`❌ Still can't find: ${recordPathWav}`);
+                    return promptUser(channel);
+                }
+
+                // --- 1. STT: Whisper ---
                 const transcription = await openai.audio.transcriptions.create({
                     file: fs.createReadStream(recordPathWav),
                     model: 'whisper-1',
                 });
+
                 const userText = transcription.text;
                 console.log(`👤 User said: ${userText}`);
 
-                if (!userText || userText.trim() === '') {
+                if (!userText || userText.trim().length < 2) {
                     return promptUser(channel);
                 }
 
-                // 2. LLM: Generate Response
+                // --- 2. LLM: Generate Response ---
                 conversationHistory.push({ role: 'user', content: userText });
                 const completion = await openai.chat.completions.create({
                     model: 'gpt-4o-mini',
@@ -70,33 +88,35 @@ ari.connect('http://127.0.0.1:8088', 'ai_user', 'ai_secret_pass', (err, client) 
                 console.log(`🤖 AI says: ${aiResponseText}`);
                 conversationHistory.push({ role: 'assistant', content: aiResponseText });
 
-                // 3. TTS: Generate Audio
+                // --- 3. TTS: Generate Audio ---
                 const mp3Response = await openai.audio.speech.create({
                     model: 'tts-1',
                     voice: 'alloy',
                     input: aiResponseText,
                 });
 
-                const mp3Path = path.join(AUDIO_DIR, `ai_output_${channel.id}.mp3`);
-                const wavPath = path.join(AUDIO_DIR, `ai_output_${channel.id}.wav`);
+                const mp3Path = path.join(AUDIO_DIR, `ai_output_${channel.id.replace(/\./g, '_')}.mp3`);
+                const wavPath = path.join(AUDIO_DIR, `ai_output_${channel.id.replace(/\./g, '_')}.wav`);
 
                 const buffer = Buffer.from(await mp3Response.arrayBuffer());
                 await fs.promises.writeFile(mp3Path, buffer);
                 await convertAudio(mp3Path, wavPath);
 
-                // 4. Playback
+                // --- 4. Playback ---
                 const playback = client.Playback();
                 const asteriskPlayPath = wavPath.replace('.wav', '');
 
                 await channel.play({ media: `sound:${asteriskPlayPath}` }, playback);
 
                 playback.on('PlaybackFinished', () => {
+                    // Clean up the recording file to keep your VPS SSD clean
+                    if (fs.existsSync(recordPathWav)) fs.unlinkSync(recordPathWav);
                     promptUser(channel);
                 });
 
             } catch (error) {
                 console.error("Error in AI pipeline:", error);
-                channel.hangup();
+                promptUser(channel);
             }
         });
     }
