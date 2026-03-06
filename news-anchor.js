@@ -20,8 +20,13 @@ const perplexity = new OpenAI({
 const AUDIO_DIR = '/data/audio';
 const MP3_PATH = path.join(AUDIO_DIR, 'daily_news.mp3');
 const WAV_PATH = path.join(AUDIO_DIR, 'daily_news.wav');
-const TEMP_CALL_FILE = path.join(__dirname, 'news.call');
+
+// Use Asterisk's temp directory to build the file, then move it to outgoing
+const ASTERISK_TMP_DIR = '/var/spool/asterisk/tmp/';
 const ASTERISK_SPOOL_DIR = '/var/spool/asterisk/outgoing/';
+const TEMP_CALL_FILE = path.join(ASTERISK_TMP_DIR, 'news.call');
+const FINAL_CALL_FILE = path.join(ASTERISK_SPOOL_DIR, 'news.call');
+
 const EXTENSION_TO_CALL = '100';
 
 // Define your "For You" interests here
@@ -45,7 +50,7 @@ async function runNewsAnchor() {
         const todayIsoDate = new Date().toISOString().split('T')[0];
 
         const searchResponse = await perplexity.chat.completions.create({
-            model: 'sonar-pro-latest', // Upgraded to the latest Pro model
+            model: 'sonar-pro',
             messages: [
                 {
                     role: 'system',

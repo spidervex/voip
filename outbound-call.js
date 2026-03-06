@@ -25,14 +25,17 @@ async function initiateCall() {
     console.log(`📞 Attempting to trigger call to ${EXTENSION_TO_CALL}...`);
 
     try {
-        // 1. Write the file locally
-        fs.writeFileSync(TEMP_FILE, callFileContent);
+        const tempSpool = '/var/spool/asterisk/tmp/outbound_test.call';
+        const finalSpool = path.join(ASTERISK_SPOOL_DIR, 'outbound_test.call');
 
-        // 2. IMPORTANT: Asterisk needs to own the file to process it correctly
-        execSync(`sudo chown asterisk:asterisk ${TEMP_FILE}`);
+        // 1. Write to temp dir
+        fs.writeFileSync(tempSpool, callFileContent);
+
+        // 2. Open permissions
+        fs.chmodSync(tempSpool, 0o666);
 
         // 3. Move to spool
-        execSync(`sudo mv ${TEMP_FILE} ${ASTERISK_SPOOL_DIR}`);
+        fs.renameSync(tempSpool, finalSpool);
 
         console.log("🚀 Call file placed.");
     } catch (err) {

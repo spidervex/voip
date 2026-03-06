@@ -107,3 +107,25 @@ npm start
 1. Dial `200` on your SIP phone.
 2. Wait for the beep, then speak.
 3. Stop speaking for 2 seconds. The AI will process your speech and reply.
+
+## Step 8: The Morning News Anchor
+This PBX includes a script that uses Perplexity AI to research current events and OpenAI to read them to you as a morning news brief.
+
+1. Ensure your `PERPLEXITY_API_KEY` is added to your `.env` file.
+2. Dial **9001** on your handset to trigger the AI to research and write the news. Hang up, and the PBX will call you back in ~20 seconds when the audio is ready.
+3. Dial **9000** to replay the most recent news brief.
+
+**To schedule the news automatically:**
+Open your crontab:
+```bash
+crontab -e
+```
+
+Add this line to the bottom to have the AI call you with the news every morning at 7:30 AM (Update `/home/vex/voip` to your actual path if different):
+```text
+# Set the timezone to Mountain Time
+CRON_TZ=America/Edmonton
+
+# Now this will run at 7:30 AM Calgary time regardless of UTC
+30 7 * * * /usr/bin/node /home/vex/voip/news-anchor.js >> /home/vex/voip/news.log 2>&1
+```
